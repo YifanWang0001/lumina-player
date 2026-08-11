@@ -1,20 +1,45 @@
 import Foundation
 import AVFoundation
 import Combine
+import SwiftUI
 
 @MainActor
 final class PlayerViewModel: ObservableObject {
     @Published var player: AVPlayer?
-    @Published var subtitleText = ""
-    @Published var originalText: String?
+    @Published var currentOriginalText: String?
+    @Published var currentTranslatedText: String?
     @Published var isDownloading = false
     @Published var downloadProgress: Double = 0
     @Published var downloadError: String?
+
+    @AppStorage("displayMode") private var displayModeRaw: String = DisplayMode.bilingual.rawValue
 
     private let recognizer = SpeechRecognizer()
     private let translator = TranslationService()
     private var cancellables = Set<AnyCancellable>()
     private var downloadTask: URLSessionDownloadTask?
+    private var timeObserver: Any?
+    private var segments: [SubtitleSegment] = []
+    private var translatedSegments: [Int: String] = [:]
+    private var currentSegmentIndex = -1
+
+    // MARK: - Settings helpers
+
+    private var videoLanguage: VideoLanguage {
+        let raw = UserDefaults.standard.string(forKey: "videoLanguage") ?? ""
+        return VideoLanguage(rawValue: raw) ?? .japanese
+    }
+
+    private var translationLanguage: TranslationLanguage {
+        let raw = UserDefaults.standard.string(forKey: "translationLanguage") ?? ""
+        return TranslationLanguage(rawValue: raw) ?? .chinese
+    }
+
+    var displayMode: DisplayMode {
+        DisplayMode(rawValue: displayModeRaw) ?? .bilingual
+    }
+
+    // MARK: - Load
 
     func loadURL(_ urlString: String) {
         guard let url = URL(string: urlString) else { return }
@@ -48,30 +73,48 @@ final class PlayerViewModel: ObservableObject {
         downloadTask?.resume()
     }
 
+    // MARK: - Playback
+
     private func startPlayback(localURL: URL) {
         isDownloading = false
+        segments = []
+        translatedSegments = [:]
+        currentSegmentIndex = -1
+        currentOriginalText = nil
+        currentTranslatedText = nil
 
         let avPlayer = AVPlayer(url: localURL)
         self.player = avPlayer
 
-        avPlayer.play()
+        let sourceLang = videoLanguage.localeIdentifier
+        let targetLang = translationLanguage.localeIdentifier
+        let sourceLocale = Locale.Language(identifier: sourceLang)
+        let targetLocale = Locale.Language(identifier: targetLang)
+        translator.configure(source: sourceLocale, target: targetLocale)
 
-        recognizer.start(fileURL: localURL) { [weak self] japaneseText in
+        recognizer.start(fileURL: localURL, localeIdentifier: sourceLang) { [weak self] segment in
             guard let self else { return }
 
-            Task { @MainActor in
-                self.originalText = japaneseText
+            // Skip status messages
+            if segment.text.hasPrefix("[") && segment.text.hasSuffix("]") { return }
 
-                if !japaneseText.isEmpty {
-                    self.translator.translate(japaneseText) { translated in
-                        Task { @MainActor in
-                            if let translated {
-                                self.subtitleText = translated
-                            }
-                        }
-                    }
+            let index = self.segments.count
+            self.segments.append(segment)
+
+            self.translator.translate(segment.text) { [weak self] translated in
+                guard let self else { return }
+                self.translatedSegments[index] = translated
+                if self.currentSegmentIndex == index {
+                    self.currentTranslatedText = translated
                 }
             }
+        }
+
+        avPlayer.play()
+
+        let interval = CMTime(value: 100, timescale: 1000)
+        timeObserver = avPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            self?.updateCurrentSegment(at: time)
         }
 
         NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)
@@ -81,15 +124,50 @@ final class PlayerViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    private func updateCurrentSegment(at time: CMTime) {
+        let seconds = CMTimeGetSeconds(time)
+        var foundIndex = -1
+
+        for (i, seg) in segments.enumerated() {
+            let segStart = CMTimeGetSeconds(seg.startTime)
+            let segEnd = segStart + CMTimeGetSeconds(seg.duration)
+            if seconds >= segStart && seconds < segEnd {
+                foundIndex = i
+                break
+            }
+        }
+
+        if foundIndex != currentSegmentIndex {
+            currentSegmentIndex = foundIndex
+            if foundIndex >= 0 {
+                currentOriginalText = segments[foundIndex].text
+                currentTranslatedText = translatedSegments[foundIndex]
+            } else {
+                currentOriginalText = nil
+                currentTranslatedText = nil
+            }
+        }
+    }
+
+    // MARK: - Stop
+
     func stop() {
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
         player?.pause()
         player = nil
-        subtitleText = ""
-        originalText = nil
+        currentOriginalText = nil
+        currentTranslatedText = nil
+        segments = []
+        translatedSegments = [:]
+        currentSegmentIndex = -1
         isDownloading = false
         downloadProgress = 0
         downloadError = nil
         recognizer.stop()
+        translator.cancel()
         downloadTask?.cancel()
         downloadTask = nil
         cancellables.removeAll()

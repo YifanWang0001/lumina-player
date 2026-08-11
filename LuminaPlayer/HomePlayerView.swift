@@ -7,6 +7,7 @@ struct HomePlayerView: View {
 
     @StateObject private var viewModel = PlayerViewModel()
     @State private var isBookmarked = false
+    @AppStorage("subtitleSize") private var subtitleSize: Int = 18
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,10 +72,10 @@ struct HomePlayerView: View {
             }
 
             // Subtitle overlay
-            if !viewModel.subtitleText.isEmpty {
+            if let original = viewModel.currentOriginalText {
                 VStack {
                     Spacer()
-                    subtitleOverlay
+                    subtitleOverlay(original: original, translated: viewModel.currentTranslatedText)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 12)
                 }
@@ -126,16 +127,22 @@ struct HomePlayerView: View {
         }
     }
 
-    private var subtitleOverlay: some View {
+    private func subtitleOverlay(original: String, translated: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            if let original = viewModel.originalText {
+            if viewModel.displayMode == .bilingual {
                 Text(original)
-                    .font(.system(size: 13))
+                    .font(.system(size: CGFloat(subtitleSize) - 2))
                     .foregroundColor(LuminaColor.onSurface.opacity(0.7))
             }
-            Text(viewModel.subtitleText)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(LuminaColor.onSurface)
+            if let translated {
+                Text(translated)
+                    .font(.system(size: CGFloat(subtitleSize), weight: .medium))
+                    .foregroundColor(LuminaColor.onSurface)
+            } else {
+                Text(original)
+                    .font(.system(size: CGFloat(subtitleSize), weight: .medium))
+                    .foregroundColor(LuminaColor.onSurface)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
