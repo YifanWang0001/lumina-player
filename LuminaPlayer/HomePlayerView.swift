@@ -16,6 +16,7 @@ struct HomePlayerView: View {
         }
         .background(LuminaColor.background)
         .onAppear { viewModel.loadURL(url) }
+        .onDisappear { viewModel.stop() }
     }
 
     // MARK: - Top Bar

@@ -28,7 +28,7 @@ final class PlayerViewModel: ObservableObject {
 
     private var videoLanguage: VideoLanguage {
         let raw = UserDefaults.standard.string(forKey: "videoLanguage") ?? ""
-        return VideoLanguage(rawValue: raw) ?? .japanese
+        return VideoLanguage(rawValue: raw) ?? .chinese
     }
 
     private var translationLanguage: TranslationLanguage {
@@ -94,8 +94,12 @@ final class PlayerViewModel: ObservableObject {
             .sink { [weak self] status in
                 guard let self else { return }
                 if status == .failed {
-                    let msg = avPlayer.currentItem?.error?.localizedDescription ?? "无法播放该文件"
-                    self.playerError = msg
+                    let baseError = avPlayer.currentItem?.error?.localizedDescription ?? ""
+                    if baseError.isEmpty {
+                        self.playerError = "无法播放\n\n链接可能不是直接的视频地址，请确认链接以 .mp4 / .m3u8 等格式结尾"
+                    } else {
+                        self.playerError = "\(baseError)\n\n链接可能不是直接的视频地址，请确认链接以 .mp4 / .m3u8 等格式结尾"
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -109,17 +113,22 @@ final class PlayerViewModel: ObservableObject {
         recognizer.start(fileURL: localURL, localeIdentifier: sourceLang) { [weak self] segment in
             guard let self else { return }
 
-            // Skip status messages
-            if segment.text.hasPrefix("[") && segment.text.hasSuffix("]") { return }
+            let isStatus = segment.text.hasPrefix("[") && segment.text.hasSuffix("]")
 
             let index = self.segments.count
             self.segments.append(segment)
 
-            self.translator.translate(segment.text) { [weak self] translated in
-                guard let self else { return }
-                self.translatedSegments[index] = translated
-                if self.currentSegmentIndex == index {
-                    self.currentTranslatedText = translated
+            if isStatus {
+                // Show status message immediately
+                self.currentOriginalText = segment.text
+                self.currentTranslatedText = nil
+            } else {
+                self.translator.translate(segment.text) { [weak self] translated in
+                    guard let self else { return }
+                    self.translatedSegments[index] = translated
+                    if self.currentSegmentIndex == index {
+                        self.currentTranslatedText = translated
+                    }
                 }
             }
         }
@@ -161,6 +170,10 @@ final class PlayerViewModel: ObservableObject {
                 currentTranslatedText = nil
             }
         }
+    }
+
+    deinit {
+        stop()
     }
 
     // MARK: - Stop
