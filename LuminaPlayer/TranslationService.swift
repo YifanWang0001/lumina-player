@@ -2,12 +2,12 @@ import Foundation
 import Translation
 
 final class TranslationService {
+    @available(iOS 18.0, *)
     private var session: TranslationSession?
     private var lastTask: Task<Void, Never>?
 
     func configure(source: Locale.Language?, target: Locale.Language?) {
-        guard let source, let target else {
-            session = nil
+        guard #available(iOS 18.0, *), let source, let target else {
             return
         }
         let config = TranslationSession.Configuration(source: source, target: target)
@@ -23,8 +23,8 @@ final class TranslationService {
             return
         }
 
-        guard let session else {
-            onResult(nil)
+        guard #available(iOS 18.0, *), let session else {
+            onResult(trimmed)
             return
         }
 
