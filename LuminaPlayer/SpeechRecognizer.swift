@@ -145,6 +145,12 @@ final class SpeechRecognizer {
         return pcmBuffer
     }
 
+    deinit {
+        recognitionTask?.cancel()
+        recognitionRequest?.endAudio()
+        assetReader?.cancelReading()
+    }
+
     func stop() {
         recognitionTask?.cancel()
         recognitionTask = nil

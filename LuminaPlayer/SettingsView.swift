@@ -127,7 +127,7 @@ enum DisplayMode: String, CaseIterable {
 // MARK: - Translation Settings
 
 struct TranslationSettingsContent: View {
-    @AppStorage("videoLanguage") private var videoLanguage: VideoLanguage = .japanese
+    @AppStorage("videoLanguage") private var videoLanguage: VideoLanguage = .chinese
     @AppStorage("translationLanguage") private var translationLanguage: TranslationLanguage = .chinese
     @AppStorage("displayMode") private var displayMode: DisplayMode = .bilingual
 

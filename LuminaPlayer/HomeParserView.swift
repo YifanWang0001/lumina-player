@@ -35,6 +35,7 @@ struct HomeParserView: View {
         .onChange(of: selectedPhoto) {
             guard let item = selectedPhoto else { return }
             Task {
+                defer { selectedPhoto = nil }
                 guard let data = try? await item.loadTransferable(type: Data.self) else { return }
                 let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
                 let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).mp4")
