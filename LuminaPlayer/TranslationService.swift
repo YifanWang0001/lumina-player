@@ -1,17 +1,12 @@
 import Foundation
-import Translation
 
 final class TranslationService {
-    private var sessionStorage: Any?
     private var lastTask: Task<Void, Never>?
 
     func configure(source: Locale.Language?, target: Locale.Language?) {
-        guard #available(iOS 18.0, *), let source, let target else {
-            sessionStorage = nil
-            return
-        }
-        let config = TranslationSession.Configuration(source: source, target: target)
-        sessionStorage = TranslationSession(configuration: config)
+        // TranslationSession is only available through SwiftUI's .translationTask()
+        // modifier and cannot be instantiated directly. For now, pass through.
+        // TODO: integrate .translationTask or use alternative translation backend.
     }
 
     func translate(_ text: String, onResult: @escaping (String?) -> Void) {
@@ -23,21 +18,7 @@ final class TranslationService {
             return
         }
 
-        guard #available(iOS 18.0, *), let session = sessionStorage as? TranslationSession else {
-            onResult(trimmed)
-            return
-        }
-
-        lastTask = Task {
-            do {
-                let response = try await session.translate(trimmed)
-                guard !Task.isCancelled else { return }
-                await MainActor.run { onResult(response.targetText) }
-            } catch {
-                guard !Task.isCancelled else { return }
-                await MainActor.run { onResult(nil) }
-            }
-        }
+        onResult(trimmed)
     }
 
     func cancel() {
