@@ -2,16 +2,16 @@ import Foundation
 import Translation
 
 final class TranslationService {
-    @available(iOS 18.0, *)
-    private var session: TranslationSession?
+    private var sessionStorage: Any?
     private var lastTask: Task<Void, Never>?
 
     func configure(source: Locale.Language?, target: Locale.Language?) {
         guard #available(iOS 18.0, *), let source, let target else {
+            sessionStorage = nil
             return
         }
         let config = TranslationSession.Configuration(source: source, target: target)
-        session = TranslationSession(configuration: config)
+        sessionStorage = TranslationSession(configuration: config)
     }
 
     func translate(_ text: String, onResult: @escaping (String?) -> Void) {
@@ -23,7 +23,7 @@ final class TranslationService {
             return
         }
 
-        guard #available(iOS 18.0, *), let session else {
+        guard #available(iOS 18.0, *), let session = sessionStorage as? TranslationSession else {
             onResult(trimmed)
             return
         }
