@@ -16,15 +16,6 @@ final class TranslationService {
 
         lastTask = Task {
             do {
-                let availability = LanguageAvailability()
-                let status = await availability.status(from: .japanese, to: .chinese)
-
-                guard status == .installed else {
-                    guard !Task.isCancelled else { return }
-                    onResult("[Translation model needs download]")
-                    return
-                }
-
                 let session = TranslationSession(
                     sourceLanguage: .japanese,
                     targetLanguage: .chinese
@@ -36,7 +27,7 @@ final class TranslationService {
                 onResult(response.targetText)
             } catch {
                 guard !Task.isCancelled else { return }
-                onResult(nil)
+                onResult("[Translation unavailable: \(error.localizedDescription)]")
             }
         }
     }

@@ -21,6 +21,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.lumina.player
         INFOPLIST_FILE: LuminaPlayer/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
+        ALWAYS_SEARCH_USER_PATHS: "NO"
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"

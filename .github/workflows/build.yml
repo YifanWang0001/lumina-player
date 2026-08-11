@@ -11,13 +11,17 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+      DEVELOPER_DIR: /Applications/Xcode_15.4.app
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show Xcode version
+        run: xcodebuild -version
+
       - name: Install XcodeGen
         run: |
-          curl -fsSLO https://github.com/yonaskolb/XcodeGen/releases/download/2.40.0/xcodegen.zip
+          curl -fsSLO https://github.com/yonaskolb/XcodeGen/releases/download/2.38.0/xcodegen.zip
           unzip xcodegen.zip -d /tmp/xcodegen
           sudo install -m 755 /tmp/xcodegen/xcodegen/bin/xcodegen /usr/local/bin/xcodegen
           xcodegen --version

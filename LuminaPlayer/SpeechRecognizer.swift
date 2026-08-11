@@ -23,7 +23,8 @@ final class SpeechRecognizer {
     private func beginRecognition(fileURL: URL, onResult: @escaping (String) -> Void) {
         let asset = AVAsset(url: fileURL)
 
-        guard let audioTrack = asset.tracks(withMediaType: .audio).first else {
+        let audioTrack = asset.tracks(withMediaType: .audio).first
+        guard audioTrack != nil else {
             DispatchQueue.main.async { onResult("[No audio track]") }
             return
         }
@@ -43,7 +44,7 @@ final class SpeechRecognizer {
             AVLinearPCMIsBigEndianKey: false,
         ]
 
-        let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
+        let output = AVAssetReaderTrackOutput(track: audioTrack!, outputSettings: outputSettings)
         reader.add(output)
 
         guard reader.startReading() else {
@@ -102,10 +103,10 @@ final class SpeechRecognizer {
         CMBlockBufferGetDataPointer(blockBuffer, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &totalLength, dataPointerOut: &dataPointer)
         guard let dataPointer, totalLength > 0 else { return nil }
 
-        let dst = pcmBuffer.int16ChannelData!.pointee
+        guard let dst = pcmBuffer.int16ChannelData?.pointee else { return nil }
         let count = min(Int(pcmBuffer.frameLength), totalLength / MemoryLayout<Int16>.stride)
         dataPointer.withMemoryRebound(to: Int16.self, capacity: count) { src in
-            dst.assign(from: src, count: count)
+            dst.update(from: src, count: count)
         }
 
         return pcmBuffer
