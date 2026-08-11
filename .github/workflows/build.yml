@@ -17,11 +17,10 @@ jobs:
 
       - name: Install XcodeGen
         run: |
-          XCODEGEN_URL="https://github.com/yonaskolb/XcodeGen/releases/download/2.39.1/xcodegen.zip"
-          curl -sSL "$XCODEGEN_URL" -o xcodegen.zip
-          unzip -q xcodegen.zip
-          chmod +x xcodegen
-          sudo mv xcodegen /usr/local/bin/
+          curl -fsSLO https://github.com/yonaskolb/XcodeGen/releases/download/2.40.0/xcodegen.zip
+          unzip xcodegen.zip -d /tmp/xcodegen
+          sudo install -m 755 /tmp/xcodegen/xcodegen /usr/local/bin/xcodegen
+          xcodegen --version
 
       - name: Generate Xcode project
         run: xcodegen generate
