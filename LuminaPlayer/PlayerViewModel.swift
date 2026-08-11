@@ -282,6 +282,23 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
                     didFinishDownloadingTo location: URL) {
         if hasError { return }
 
+        // Check if downloaded content looks like a video
+        if let handle = try? FileHandle(forReadingFrom: location) {
+            let header = handle.readData(ofLength: 256)
+            handle.closeFile()
+            // Common non-video signatures: HTML, JSON, plain text
+            let prefix = String(data: header.prefix(64), encoding: .utf8) ?? ""
+            let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if trimmed.hasPrefix("<!doctype") || trimmed.hasPrefix("<html") {
+                onError("下载内容为网页而非视频\n\n请确认链接是直接的视频地址（以 .mp4 / .m3u8 等格式结尾）")
+                return
+            }
+            if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+                onError("下载内容为 JSON 数据而非视频\n\n请确认链接是直接的视频地址")
+                return
+            }
+        }
+
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         let dest = caches.appendingPathComponent("lumina_\(UUID().uuidString).mp4")
         do {

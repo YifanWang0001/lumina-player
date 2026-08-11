@@ -10,9 +10,7 @@ struct SubtitleSegment {
 
 final class SpeechRecognizer {
     private var speechRecognizer: SFSpeechRecognizer?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
-    private var assetReader: AVAssetReader?
     private var lastEmittedIndex = 0
 
     func start(fileURL: URL, localeIdentifier: String, onSegment: @escaping (SubtitleSegment) -> Void) {
@@ -43,13 +41,8 @@ final class SpeechRecognizer {
             return
         }
 
-        guard let reader = try? AVAssetReader(asset: asset) else {
-            DispatchQueue.main.async {
-                onSegment(SubtitleSegment(text: "[Cannot read asset]", startTime: .zero, duration: .zero))
-            }
-            return
-        }
-        assetReader = reader
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumina_audio_\(UUID().uuidString).caf")
 
         let outputSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
@@ -60,29 +53,27 @@ final class SpeechRecognizer {
             AVLinearPCMIsBigEndianKey: false,
         ]
 
-        let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
-        reader.add(output)
-
-        guard reader.startReading() else {
+        do {
+            try await extractAudio(track: audioTrack, asset: asset, to: tempURL, settings: outputSettings)
+        } catch {
             DispatchQueue.main.async {
-                onSegment(SubtitleSegment(text: "[Cannot start reading]", startTime: .zero, duration: .zero))
+                onSegment(SubtitleSegment(text: "[Audio extraction failed]", startTime: .zero, duration: .zero))
             }
             return
         }
 
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        recognitionRequest?.shouldReportPartialResults = true
-
-        guard let recognitionRequest, let speechRecognizer else { return }
-
+        recognitionTask?.cancel()
         lastEmittedIndex = 0
 
-        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+        let request = SFSpeechURLRecognitionRequest(url: tempURL)
+        request.shouldReportPartialResults = true
+
+        guard let speechRecognizer else { return }
+
+        recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self, let result else { return }
 
             let segments = result.bestTranscription.segments
-            // All segments except the last are stable in partial results;
-            // when isFinal, all are stable.
             let stableCount = result.isFinal ? segments.count : max(0, segments.count - 1)
 
             while self.lastEmittedIndex < stableCount {
@@ -95,69 +86,69 @@ final class SpeechRecognizer {
                 DispatchQueue.main.async { onSegment(segment) }
                 self.lastEmittedIndex += 1
             }
-        }
 
-        while reader.status == .reading {
-            guard let sampleBuffer = output.copyNextSampleBuffer() else {
-                if reader.status == .completed { break }
-                continue
+            if result.isFinal {
+                try? FileManager.default.removeItem(at: tempURL)
             }
-            if let pcmBuffer = createPCMBuffer(from: sampleBuffer) {
-                recognitionRequest.append(pcmBuffer)
-            }
-            CMSampleBufferInvalidate(sampleBuffer)
         }
-
-        recognitionRequest.endAudio()
     }
 
-    private func createPCMBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
-        guard let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) else { return nil }
-        let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)?.pointee
-        let sampleRate = asbd?.mSampleRate ?? 16000
-        let channels = asbd?.mChannelsPerFrame ?? 1
-
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: sampleRate,
-            channels: AVAudioChannelCount(channels),
-            interleaved: true
-        ) else { return nil }
-
-        let numSamples = CMSampleBufferGetNumSamples(sampleBuffer)
-        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(numSamples)) else {
-            return nil
-        }
-        pcmBuffer.frameLength = AVAudioFrameCount(numSamples)
-
-        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return nil }
-        var dataPointer: UnsafeMutablePointer<Int8>?
-        var totalLength = 0
-        CMBlockBufferGetDataPointer(blockBuffer, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &totalLength, dataPointerOut: &dataPointer)
-        guard let dataPointer, totalLength > 0 else { return nil }
-
-        guard let dst = pcmBuffer.int16ChannelData?.pointee else { return nil }
-        let count = min(Int(pcmBuffer.frameLength), totalLength / MemoryLayout<Int16>.stride)
-        dataPointer.withMemoryRebound(to: Int16.self, capacity: count) { src in
-            dst.update(from: src, count: count)
+    private func extractAudio(track: AVAssetTrack, asset: AVAsset, to url: URL, settings: [String: Any]) async throws {
+        guard let reader = try? AVAssetReader(asset: asset) else {
+            throw NSError(domain: "SpeechRecognizer", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot create asset reader"])
         }
 
-        return pcmBuffer
+        let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
+        reader.add(readerOutput)
+
+        guard let writer = try? AVAssetWriter(url: url, fileType: .caf) else {
+            throw NSError(domain: "SpeechRecognizer", code: 2, userInfo: [NSLocalizedDescriptionKey: "Cannot create asset writer"])
+        }
+
+        let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
+        writer.add(writerInput)
+
+        guard reader.startReading() else {
+            throw NSError(domain: "SpeechRecognizer", code: 3, userInfo: [NSLocalizedDescriptionKey: "Cannot start reading"])
+        }
+
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+
+        let startTime = Date()
+        while reader.status == .reading || reader.status == .unknown {
+            if Date().timeIntervalSince(startTime) > 30 { break }
+
+            if let sampleBuffer = readerOutput.copyNextSampleBuffer() {
+                if writerInput.isReadyForMoreMediaData {
+                    writerInput.append(sampleBuffer)
+                }
+                CMSampleBufferInvalidate(sampleBuffer)
+            } else {
+                if reader.status == .completed { break }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+
+        writerInput.markAsFinished()
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writer.finishWriting { continuation.resume() }
+        }
+
+        if writer.status != .completed {
+            let errorDesc = writer.error?.localizedDescription ?? "unknown error"
+            throw NSError(domain: "SpeechRecognizer", code: 4, userInfo: [NSLocalizedDescriptionKey: "Audio export failed: \(errorDesc)"])
+        }
     }
 
     deinit {
         recognitionTask?.cancel()
-        recognitionRequest?.endAudio()
-        assetReader?.cancelReading()
     }
 
     func stop() {
         recognitionTask?.cancel()
         recognitionTask = nil
-        recognitionRequest?.endAudio()
-        recognitionRequest = nil
-        assetReader?.cancelReading()
-        assetReader = nil
         speechRecognizer = nil
         lastEmittedIndex = 0
     }
