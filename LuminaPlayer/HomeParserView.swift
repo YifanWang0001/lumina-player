@@ -1,7 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct HomeParserView: View {
     @State private var urlText = ""
+    @State private var showFilePicker = false
     let navigate: (String) -> Void
 
     var body: some View {
@@ -10,6 +12,21 @@ struct HomeParserView: View {
             centerContent
         }
         .background(LuminaColor.background)
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.movie, .mpeg4Movie, .quickTimeMovie, .audiovisualContent],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                guard url.startAccessingSecurityScopedResource() else { return }
+                defer { url.stopAccessingSecurityScopedResource() }
+                let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+                let dest = caches.appendingPathComponent("lumina_local_\(UUID().uuidString).\(url.pathExtension)")
+                if (try? FileManager.default.copyItem(at: url, to: dest)) != nil {
+                    navigate(dest.absoluteString)
+                }
+            }
+        }
     }
 
     // MARK: - Top Bar
@@ -77,6 +94,7 @@ struct HomeParserView: View {
 
                 // Local File Button
                 Button {
+                    showFilePicker = true
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.doc")

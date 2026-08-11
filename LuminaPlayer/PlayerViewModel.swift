@@ -18,6 +18,11 @@ final class PlayerViewModel: ObservableObject {
     func loadURL(_ urlString: String) {
         guard let url = URL(string: urlString) else { return }
 
+        if url.isFileURL {
+            startPlayback(localURL: url)
+            return
+        }
+
         isDownloading = true
         downloadProgress = 0
 
