@@ -30,7 +30,7 @@ struct HomeParserView: View {
                 copyToCacheAndNavigate(url)
             }
         }
-        .onChange(of: selectedPhoto) { _, newItem in
+        .onChange(of: selectedPhoto) { newItem in
             guard let item = newItem else { return }
             Task {
                 let typeID = item.supportedContentTypes.first?.identifier ?? UTType.movie.identifier
