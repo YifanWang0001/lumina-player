@@ -8,11 +8,20 @@ on:
 jobs:
   build:
     runs-on: macos-14
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          brew install xcodegen 2>/dev/null || \
+          curl -sSL https://github.com/yonaskolb/XcodeGen/releases/download/2.42.0/xcodegen.zip -o xcodegen.zip && \
+          unzip -q xcodegen.zip && \
+          chmod +x xcodegen && \
+          sudo mv xcodegen /usr/local/bin/
 
       - name: Generate Xcode project
         run: xcodegen generate
