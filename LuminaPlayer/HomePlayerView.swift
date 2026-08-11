@@ -63,7 +63,9 @@ struct HomePlayerView: View {
 
     private var videoArea: some View {
         ZStack {
-            if let player = viewModel.player {
+            if let error = viewModel.playerError {
+                playerErrorView(error)
+            } else if let player = viewModel.player {
                 VideoPlayerView(player: player)
             } else if viewModel.isDownloading {
                 downloadingPlaceholder
@@ -88,6 +90,19 @@ struct HomePlayerView: View {
             RoundedRectangle(cornerRadius: LuminaRadius.card)
                 .stroke(LuminaColor.border, lineWidth: 1)
         )
+    }
+
+    private func playerErrorView(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 32))
+                .foregroundColor(LuminaColor.primary)
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundColor(LuminaColor.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 16)
     }
 
     private var videoPlaceholder: some View {
