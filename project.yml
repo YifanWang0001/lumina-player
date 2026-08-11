@@ -8,7 +8,6 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    GENERATE_INFOPLIST_FILE: "NO"
 
 targets:
   LuminaPlayer:
@@ -18,11 +17,11 @@ targets:
       - path: LuminaPlayer
     settings:
       base:
+        PRODUCT_NAME: LuminaPlayer
         PRODUCT_BUNDLE_IDENTIFIER: com.lumina.player
         INFOPLIST_FILE: LuminaPlayer/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         PROVISIONING_PROFILE_SPECIFIER: ""
-    info:
-      path: LuminaPlayer/Info.plist
