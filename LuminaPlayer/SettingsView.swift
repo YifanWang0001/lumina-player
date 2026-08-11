@@ -132,7 +132,7 @@ struct TranslationSettingsContent: View {
         Rectangle().fill(LuminaColor.border).frame(height: 1)
     }
 
-    private func pickerRow<T: Hashable & RawRepresentable>(_ title: String, selection: Binding<T>) -> some View where T.RawValue == String {
+    private func pickerRow<T: CaseIterable & Hashable & RawRepresentable>(_ title: String, selection: Binding<T>) -> some View where T.RawValue == String {
         HStack {
             Text(title)
                 .font(.system(size: 16))
@@ -242,7 +242,7 @@ struct InterfaceSettingsContent: View {
         .padding(.vertical, 14)
     }
 
-    private func colorPickerRow<T: Hashable & RawRepresentable>(_ title: String, selection: Binding<T>, color: Color) -> some View where T.RawValue == String {
+    private func colorPickerRow<T: CaseIterable & Hashable & RawRepresentable>(_ title: String, selection: Binding<T>, color: Color) -> some View where T.RawValue == String {
         HStack {
             Text(title)
                 .font(.system(size: 14))
