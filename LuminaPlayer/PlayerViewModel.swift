@@ -137,7 +137,8 @@ final class PlayerViewModel: ObservableObject {
 
         let interval = CMTime(value: 100, timescale: 1000)
         timeObserver = avPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            self?.updateCurrentSegment(at: time)
+            guard let self else { return }
+            MainActor.assumeIsolated { self.updateCurrentSegment(at: time) }
         }
 
         NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)
@@ -170,10 +171,6 @@ final class PlayerViewModel: ObservableObject {
                 currentTranslatedText = nil
             }
         }
-    }
-
-    deinit {
-        stop()
     }
 
     // MARK: - Stop
