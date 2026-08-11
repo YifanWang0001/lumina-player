@@ -10,6 +10,7 @@ struct HomeParserView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showURLError = false
     @State private var urlErrorMessage = ""
+    @State private var isProcessingPhoto = false
     let navigate: (String) -> Void
 
     var body: some View {
@@ -18,6 +19,22 @@ struct HomeParserView: View {
             centerContent
         }
         .background(LuminaColor.background)
+        .overlay {
+            if isProcessingPhoto {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .tint(.white)
+                        Text("正在加载视频...")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                    }
+                    .padding(24)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.8)))
+                }
+            }
+        }
         .confirmationDialog("选择视频来源", isPresented: $showSourceSheet) {
             Button("从相册选择") { showPhotosPicker = true }
             Button("从文件选择") { showFilePicker = true }
@@ -34,8 +51,12 @@ struct HomeParserView: View {
         }
         .onChange(of: selectedPhoto) {
             guard let item = selectedPhoto else { return }
+            isProcessingPhoto = true
             Task {
-                defer { selectedPhoto = nil }
+                defer {
+                    selectedPhoto = nil
+                    isProcessingPhoto = false
+                }
                 guard let data = try? await item.loadTransferable(type: Data.self) else { return }
                 let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
                 let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).mp4")

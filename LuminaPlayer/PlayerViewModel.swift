@@ -23,6 +23,7 @@ final class PlayerViewModel: ObservableObject {
     private var segments: [SubtitleSegment] = []
     private var translatedSegments: [Int: String] = [:]
     private var currentSegmentIndex = -1
+    private var recognitionStarted = false
 
     // MARK: - Settings helpers
 
@@ -86,23 +87,81 @@ final class PlayerViewModel: ObservableObject {
         currentSegmentIndex = -1
         currentOriginalText = nil
         currentTranslatedText = nil
+        recognitionStarted = false
 
         let avPlayer = AVPlayer(url: localURL)
         self.player = avPlayer
 
+        // Restore saved playback position
+        let seekTime = savedTime(for: localURL)
+
         avPlayer.currentItem?.publisher(for: \.status)
             .sink { [weak self] status in
                 guard let self else { return }
-                if status == .failed {
+                switch status {
+                case .readyToPlay:
+                    if let st = seekTime, st > .zero {
+                        avPlayer.seek(to: st)
+                    }
+                    self.startRecognition(localURL: localURL)
+                case .failed:
                     let baseError = avPlayer.currentItem?.error?.localizedDescription ?? ""
                     if baseError.isEmpty {
                         self.playerError = "无法播放\n\n链接可能不是直接的视频地址，请确认链接以 .mp4 / .m3u8 等格式结尾"
                     } else {
-                        self.playerError = "\(baseError)\n\n链接可能不是直接的视频地址，请确认链接以 .mp4 / .m3u8 等格式结尾"
+                        self.playerError = "无法播放\n\n\(baseError)"
                     }
+                default:
+                    break
                 }
             }
             .store(in: &cancellables)
+
+        avPlayer.play()
+
+        let interval = CMTime(value: 100, timescale: 1000)
+        timeObserver = avPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard let self else { return }
+            MainActor.assumeIsolated { self.updateCurrentSegment(at: time) }
+        }
+
+        NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)
+            .sink { [weak self] _ in
+                self?.player?.seek(to: .zero)
+            }
+            .store(in: &cancellables)
+    }
+
+    // MARK: - Playback position persistence
+
+    private func savedTime(for url: URL) -> CMTime? {
+        let key = "playback_\(url.lastPathComponent)"
+        guard let seconds = UserDefaults.standard.object(forKey: key) as? Double else { return nil }
+        return CMTime(seconds: seconds, preferredTimescale: 1000)
+    }
+
+    private func saveCurrentTime() {
+        guard let player, let currentItem = player.currentItem else { return }
+        let time = player.currentTime()
+        guard CMTIME_IS_NUMERIC(time) else { return }
+        // Only save if we've actually played something
+        let seconds = CMTimeGetSeconds(time)
+        let duration = CMTimeGetSeconds(currentItem.duration)
+        guard seconds > 0, duration > 0 else { return }
+        // Extract a stable key from the asset URL
+        guard let asset = currentItem.asset as? AVURLAsset else { return }
+        let key = "playback_\(asset.url.lastPathComponent)"
+        UserDefaults.standard.set(seconds, forKey: key)
+    }
+
+    // MARK: - Speech Recognition
+
+    private func startRecognition(localURL: URL) {
+        guard !recognitionStarted else { return }
+        recognitionStarted = true
+
+        currentOriginalText = "[正在识别语音...]"
+        currentTranslatedText = nil
 
         let sourceLang = videoLanguage.localeIdentifier
         let targetLang = translationLanguage.localeIdentifier
@@ -119,33 +178,24 @@ final class PlayerViewModel: ObservableObject {
             self.segments.append(segment)
 
             if isStatus {
-                // Show status message immediately
                 self.currentOriginalText = segment.text
                 self.currentTranslatedText = nil
             } else {
+                if index == 0 {
+                    self.currentOriginalText = segment.text
+                }
                 self.translator.translate(segment.text) { [weak self] translated in
                     guard let self else { return }
                     self.translatedSegments[index] = translated
                     if self.currentSegmentIndex == index {
                         self.currentTranslatedText = translated
+                    } else if self.currentSegmentIndex < 0 && self.currentOriginalText == segment.text {
+                        self.currentOriginalText = segment.text
+                        self.currentTranslatedText = translated
                     }
                 }
             }
         }
-
-        avPlayer.play()
-
-        let interval = CMTime(value: 100, timescale: 1000)
-        timeObserver = avPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            guard let self else { return }
-            MainActor.assumeIsolated { self.updateCurrentSegment(at: time) }
-        }
-
-        NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)
-            .sink { [weak self] _ in
-                self?.player?.seek(to: .zero)
-            }
-            .store(in: &cancellables)
     }
 
     private func updateCurrentSegment(at time: CMTime) {
@@ -176,6 +226,7 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Stop
 
     func stop() {
+        saveCurrentTime()
         if let observer = timeObserver {
             player?.removeTimeObserver(observer)
             timeObserver = nil
