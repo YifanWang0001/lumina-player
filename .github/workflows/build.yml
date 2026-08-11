@@ -16,12 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install XcodeGen
-        run: |
-          brew install xcodegen 2>/dev/null || \
-          curl -sSL https://github.com/yonaskolb/XcodeGen/releases/download/2.42.0/xcodegen.zip -o xcodegen.zip && \
-          unzip -q xcodegen.zip && \
-          chmod +x xcodegen && \
-          sudo mv xcodegen /usr/local/bin/
+        run: brew install xcodegen
 
       - name: Generate Xcode project
         run: xcodegen generate
