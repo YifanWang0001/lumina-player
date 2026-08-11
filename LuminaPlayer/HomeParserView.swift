@@ -8,6 +8,8 @@ struct HomeParserView: View {
     @State private var showSourceSheet = false
     @State private var showPhotosPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showURLError = false
+    @State private var urlErrorMessage = ""
     let navigate: (String) -> Void
 
     var body: some View {
@@ -33,15 +35,19 @@ struct HomeParserView: View {
         .onChange(of: selectedPhoto) {
             guard let item = selectedPhoto else { return }
             Task {
-                guard let url = try? await item.loadTransferable(type: URL.self) else { return }
-                let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
+                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
                 let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-                let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).\(ext)")
-                try? FileManager.default.copyItem(at: url, to: dest)
+                let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).mp4")
+                try? data.write(to: dest)
                 navigate(dest.absoluteString)
             }
         }
         .photosPicker(isPresented: $showPhotosPicker, selection: $selectedPhoto, matching: .videos)
+        .alert("链接错误", isPresented: $showURLError) {
+            Button("确定", role: .cancel) {}
+        } message: {
+            Text(urlErrorMessage)
+        }
     }
 
     private func copyToCacheAndNavigate(_ url: URL) {
@@ -104,9 +110,17 @@ struct HomeParserView: View {
                 // Parse Button
                 Button {
                     let trimmed = urlText.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty {
-                        navigate(trimmed)
+                    guard !trimmed.isEmpty else {
+                        urlErrorMessage = "请输入链接"
+                        showURLError = true
+                        return
                     }
+                    guard let url = URL(string: trimmed), url.scheme == "http" || url.scheme == "https" else {
+                        urlErrorMessage = "链接格式无效，请输入以 http:// 或 https:// 开头的链接"
+                        showURLError = true
+                        return
+                    }
+                    navigate(trimmed)
                 } label: {
                     Text("解析")
                         .font(.system(size: 14, weight: .medium))

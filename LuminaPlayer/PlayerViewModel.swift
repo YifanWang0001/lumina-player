@@ -11,6 +11,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isDownloading = false
     @Published var downloadProgress: Double = 0
     @Published var downloadError: String?
+    @Published var playerError: String?
 
     @AppStorage("displayMode") private var displayModeRaw: String = DisplayMode.bilingual.rawValue
 
@@ -42,7 +43,10 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Load
 
     func loadURL(_ urlString: String) {
-        guard let url = URL(string: urlString) else { return }
+        guard let url = URL(string: urlString) else {
+            downloadError = "无效链接"
+            return
+        }
 
         if url.isFileURL {
             startPlayback(localURL: url)
@@ -85,6 +89,16 @@ final class PlayerViewModel: ObservableObject {
 
         let avPlayer = AVPlayer(url: localURL)
         self.player = avPlayer
+
+        avPlayer.currentItem?.publisher(for: \.status)
+            .sink { [weak self] status in
+                guard let self else { return }
+                if status == .failed {
+                    let msg = avPlayer.currentItem?.error?.localizedDescription ?? "无法播放该文件"
+                    self.playerError = msg
+                }
+            }
+            .store(in: &cancellables)
 
         let sourceLang = videoLanguage.localeIdentifier
         let targetLang = translationLanguage.localeIdentifier
@@ -166,6 +180,7 @@ final class PlayerViewModel: ObservableObject {
         isDownloading = false
         downloadProgress = 0
         downloadError = nil
+        playerError = nil
         recognizer.stop()
         translator.cancel()
         downloadTask?.cancel()
