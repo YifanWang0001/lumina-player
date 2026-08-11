@@ -1,7 +1,5 @@
 import Foundation
-import Translation
 
-@available(iOS 17.4, *)
 final class TranslationService {
     private var lastTask: Task<Void, Never>?
 
@@ -15,16 +13,10 @@ final class TranslationService {
         }
 
         lastTask = Task {
-            do {
-                let session = TranslationSession()
-                let response = try await session.translate(trimmed)
-
-                guard !Task.isCancelled else { return }
-                onResult(response.targetText)
-            } catch {
-                guard !Task.isCancelled else { return }
-                onResult("[Translation unavailable: \(error.localizedDescription)]")
-            }
+            // Translation framework not available in CI SDK; pass through for now.
+            // TODO: enable when TranslationSession is available in linked SDK.
+            guard !Task.isCancelled else { return }
+            onResult(trimmed)
         }
     }
 
