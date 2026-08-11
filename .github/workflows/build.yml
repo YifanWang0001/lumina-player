@@ -1,0 +1,43 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build and archive
+        run: |
+          xcodebuild archive \
+            -project LuminaPlayer.xcodeproj \
+            -scheme LuminaPlayer \
+            -configuration Release \
+            -archivePath build/LuminaPlayer.xcarchive \
+            -destination "generic/platform=iOS" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/LuminaPlayer.xcarchive/Products/Applications/LuminaPlayer.app Payload/
+          zip -r LuminaPlayer.ipa Payload
+          rm -rf Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuminaPlayer.ipa
+          path: LuminaPlayer.ipa
