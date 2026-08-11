@@ -19,7 +19,7 @@ jobs:
         run: |
           curl -fsSLO https://github.com/yonaskolb/XcodeGen/releases/download/2.40.0/xcodegen.zip
           unzip xcodegen.zip -d /tmp/xcodegen
-          sudo install -m 755 /tmp/xcodegen/xcodegen /usr/local/bin/xcodegen
+          sudo install -m 755 /tmp/xcodegen/xcodegen/bin/xcodegen /usr/local/bin/xcodegen
           xcodegen --version
 
       - name: Generate Xcode project
