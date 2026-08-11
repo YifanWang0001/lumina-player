@@ -9,6 +9,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var originalText: String?
     @Published var isDownloading = false
     @Published var downloadProgress: Double = 0
+    @Published var downloadError: String?
 
     private let recognizer = SpeechRecognizer()
     private let translator = TranslationService()
@@ -25,6 +26,7 @@ final class PlayerViewModel: ObservableObject {
 
         isDownloading = true
         downloadProgress = 0
+        downloadError = nil
 
         let delegate = DownloadDelegate(
             progress: { [weak self] p in
@@ -32,6 +34,12 @@ final class PlayerViewModel: ObservableObject {
             },
             completion: { [weak self] localURL in
                 Task { @MainActor in self?.startPlayback(localURL: localURL) }
+            },
+            error: { [weak self] message in
+                Task { @MainActor in
+                    self?.isDownloading = false
+                    self?.downloadError = message
+                }
             }
         )
 
@@ -80,6 +88,7 @@ final class PlayerViewModel: ObservableObject {
         originalText = nil
         isDownloading = false
         downloadProgress = 0
+        downloadError = nil
         recognizer.stop()
         downloadTask?.cancel()
         downloadTask = nil
@@ -92,30 +101,61 @@ final class PlayerViewModel: ObservableObject {
 private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
     let onProgress: (Double) -> Void
     let onCompletion: (URL) -> Void
+    let onError: (String) -> Void
+    private var hasKnownSize = false
+    private var hasError = false
 
-    init(progress: @escaping (Double) -> Void, completion: @escaping (URL) -> Void) {
+    init(progress: @escaping (Double) -> Void,
+         completion: @escaping (URL) -> Void,
+         error: @escaping (String) -> Void) {
         self.onProgress = progress
         self.onCompletion = completion
+        self.onError = error
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                     totalBytesExpectedToWrite: Int64) {
-        guard totalBytesExpectedToWrite > 0 else { return }
-        onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        if totalBytesExpectedToWrite > 0 {
+            hasKnownSize = true
+            onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        } else if !hasKnownSize {
+            onProgress(-1)
+        }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
+        if hasError { return }
+
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         let dest = caches.appendingPathComponent("lumina_\(UUID().uuidString).mp4")
-        try? FileManager.default.moveItem(at: location, to: dest)
-        onCompletion(dest)
+        do {
+            try FileManager.default.moveItem(at: location, to: dest)
+            onCompletion(dest)
+        } catch {
+            onError("下载失败: \(error.localizedDescription)")
+        }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error {
-            print("[Lumina] Download error: \(error.localizedDescription)")
+            hasError = true
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain {
+                switch nsError.code {
+                case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
+                    onError("无网络连接")
+                case NSURLErrorTimedOut:
+                    onError("下载超时")
+                case NSURLErrorCannotConnectToHost:
+                    onError("无法连接服务器")
+                default:
+                    onError("下载失败: \(error.localizedDescription)")
+                }
+            } else {
+                onError("下载失败: \(error.localizedDescription)")
+            }
         }
     }
 }

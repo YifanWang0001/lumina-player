@@ -101,12 +101,27 @@ struct HomePlayerView: View {
     private var downloadingPlaceholder: some View {
         ZStack {
             LuminaColor.surface
-            VStack(spacing: 12) {
-                ProgressView()
-                    .tint(LuminaColor.primary)
-                Text("下载中 \(Int(viewModel.downloadProgress * 100))%")
-                    .font(.system(size: 14))
-                    .foregroundColor(LuminaColor.onSurfaceVariant)
+            if let error = viewModel.downloadError {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 32))
+                        .foregroundColor(LuminaColor.primary)
+                    Text(error)
+                        .font(.system(size: 14))
+                        .foregroundColor(LuminaColor.onSurfaceVariant)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 16)
+            } else {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .tint(LuminaColor.primary)
+                    Text(viewModel.downloadProgress < 0
+                         ? "下载中..."
+                         : "下载中 \(Int(viewModel.downloadProgress * 100))%")
+                        .font(.system(size: 14))
+                        .foregroundColor(LuminaColor.onSurfaceVariant)
+                }
             }
         }
     }
