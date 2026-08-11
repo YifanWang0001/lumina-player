@@ -36,5 +36,17 @@
     <string>Lumina Player uses speech recognition to transcribe video audio for translation.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Lumina Player needs microphone access to capture audio for speech recognition.</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIcons</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array>
+                <string>AppIcon</string>
+            </array>
+        </dict>
+    </dict>
 </dict>
 </plist>

@@ -6,6 +6,7 @@ struct HomeParserView: View {
     @State private var urlText = ""
     @State private var showFilePicker = false
     @State private var showSourceSheet = false
+    @State private var showPhotosPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     let navigate: (String) -> Void
 
@@ -16,7 +17,7 @@ struct HomeParserView: View {
         }
         .background(LuminaColor.background)
         .confirmationDialog("选择视频来源", isPresented: $showSourceSheet) {
-            Button("从相册选择") { selectedPhoto = nil }
+            Button("从相册选择") { showPhotosPicker = true }
             Button("从文件选择") { showFilePicker = true }
             Button("取消", role: .cancel) {}
         }
@@ -40,10 +41,7 @@ struct HomeParserView: View {
                 navigate(dest.absoluteString)
             }
         }
-        .photosPicker(isPresented: Binding(
-            get: { selectedPhoto != nil },
-            set: { if !$0 { selectedPhoto = nil } }
-        ), selection: $selectedPhoto, matching: .videos)
+        .photosPicker(isPresented: $showPhotosPicker, selection: $selectedPhoto, matching: .videos)
     }
 
     private func copyToCacheAndNavigate(_ url: URL) {
