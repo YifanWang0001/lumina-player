@@ -29,16 +29,14 @@ final class SpeechRecognizer {
                 }
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
-                self.beginRecognition(fileURL: fileURL, onSegment: onSegment)
-            }
+            Task { await self.beginRecognition(fileURL: fileURL, onSegment: onSegment) }
         }
     }
 
-    private func beginRecognition(fileURL: URL, onSegment: @escaping (SubtitleSegment) -> Void) {
+    private func beginRecognition(fileURL: URL, onSegment: @escaping (SubtitleSegment) -> Void) async {
         let asset = AVAsset(url: fileURL)
 
-        guard let audioTrack = asset.tracks(withMediaType: .audio).first else {
+        guard let audioTrack = try? await asset.loadTracks(withMediaType: .audio).first else {
             DispatchQueue.main.async {
                 onSegment(SubtitleSegment(text: "[No audio track]", startTime: .zero, duration: .zero))
             }
