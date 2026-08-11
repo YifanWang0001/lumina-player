@@ -92,6 +92,15 @@ enum VideoLanguage: String, CaseIterable {
     case chinese = "中文"
     case english = "英文"
     case korean = "韩文"
+
+    var localeIdentifier: String {
+        switch self {
+        case .japanese: return "ja-JP"
+        case .chinese:  return "zh-CN"
+        case .english:  return "en-US"
+        case .korean:   return "ko-KR"
+        }
+    }
 }
 
 enum TranslationLanguage: String, CaseIterable {
@@ -99,6 +108,15 @@ enum TranslationLanguage: String, CaseIterable {
     case english = "英文"
     case japanese = "日文"
     case korean = "韩文"
+
+    var localeIdentifier: String {
+        switch self {
+        case .chinese:  return "zh-Hans"
+        case .english:  return "en"
+        case .japanese: return "ja"
+        case .korean:   return "ko"
+        }
+    }
 }
 
 enum DisplayMode: String, CaseIterable {
@@ -109,9 +127,9 @@ enum DisplayMode: String, CaseIterable {
 // MARK: - Translation Settings
 
 struct TranslationSettingsContent: View {
-    @State private var videoLanguage: VideoLanguage = .japanese
-    @State private var translationLanguage: TranslationLanguage = .chinese
-    @State private var displayMode: DisplayMode = .bilingual
+    @AppStorage("videoLanguage") private var videoLanguage: VideoLanguage = .japanese
+    @AppStorage("translationLanguage") private var translationLanguage: TranslationLanguage = .chinese
+    @AppStorage("displayMode") private var displayMode: DisplayMode = .bilingual
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -173,11 +191,11 @@ enum BackgroundColorOption: String, CaseIterable {
 // MARK: - Interface Settings
 
 struct InterfaceSettingsContent: View {
-    @State private var subtitleSize: Int = 18
-    @State private var backgroundOpacity: Double = 0.5
-    @State private var keepScreenOn = true
-    @State private var subtitleColor: SubtitleColorOption = .white
-    @State private var backgroundColor: BackgroundColorOption = .black
+    @AppStorage("subtitleSize") private var subtitleSize: Int = 18
+    @AppStorage("backgroundOpacity") private var backgroundOpacity: Double = 0.5
+    @AppStorage("keepScreenOn") private var keepScreenOn = true
+    @AppStorage("subtitleColor") private var subtitleColor: SubtitleColorOption = .white
+    @AppStorage("backgroundColor") private var backgroundColor: BackgroundColorOption = .black
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {

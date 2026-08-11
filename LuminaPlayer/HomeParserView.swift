@@ -33,11 +33,12 @@ struct HomeParserView: View {
         .onChange(of: selectedPhoto) { _, newItem in
             guard let item = newItem else { return }
             Task {
-                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
-                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "mp4"
+                let contentType = item.supportedContentTypes.first ?? .movie
+                guard let url = try? await item.loadFileRepresentation(for: contentType) else { return }
+                let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
                 let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
                 let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).\(ext)")
-                try? data.write(to: dest)
+                try? FileManager.default.copyItem(at: url, to: dest)
                 navigate(dest.absoluteString)
             }
         }

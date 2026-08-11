@@ -1,7 +1,18 @@
 import Foundation
+import Translation
 
 final class TranslationService {
+    private var session: TranslationSession?
     private var lastTask: Task<Void, Never>?
+
+    func configure(source: Locale.Language?, target: Locale.Language?) {
+        guard let source, let target else {
+            session = nil
+            return
+        }
+        let config = TranslationSession.Configuration(source: source, target: target)
+        session = TranslationSession(configuration: config)
+    }
 
     func translate(_ text: String, onResult: @escaping (String?) -> Void) {
         lastTask?.cancel()
@@ -12,11 +23,20 @@ final class TranslationService {
             return
         }
 
+        guard let session else {
+            onResult(nil)
+            return
+        }
+
         lastTask = Task {
-            // Translation framework not available in CI SDK; pass through for now.
-            // TODO: enable when TranslationSession is available in linked SDK.
-            guard !Task.isCancelled else { return }
-            onResult(trimmed)
+            do {
+                let response = try await session.translate(trimmed)
+                guard !Task.isCancelled else { return }
+                await MainActor.run { onResult(response.targetText) }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run { onResult(nil) }
+            }
         }
     }
 

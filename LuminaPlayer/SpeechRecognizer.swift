@@ -2,38 +2,56 @@ import Foundation
 import AVFoundation
 import Speech
 
+struct SubtitleSegment {
+    let text: String
+    let startTime: CMTime
+    let duration: CMTime
+}
+
 final class SpeechRecognizer {
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
+    private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var assetReader: AVAssetReader?
+    private var lastEmittedIndex = 0
 
-    func start(fileURL: URL, onResult: @escaping (String) -> Void) {
-        SFSpeechRecognizer.requestAuthorization { status in
+    func start(fileURL: URL, localeIdentifier: String, onSegment: @escaping (SubtitleSegment) -> Void) {
+        stop()
+
+        let locale = Locale(identifier: localeIdentifier)
+        speechRecognizer = SFSpeechRecognizer(locale: locale)
+
+        SFSpeechRecognizer.requestAuthorization { [weak self] status in
+            guard let self else { return }
             guard status == .authorized else {
-                DispatchQueue.main.async { onResult("[Speech recognition not authorized]") }
+                DispatchQueue.main.async {
+                    onSegment(SubtitleSegment(text: "[Speech recognition not authorized]", startTime: .zero, duration: .zero))
+                }
                 return
             }
             DispatchQueue.global(qos: .userInitiated).async {
-                self.beginRecognition(fileURL: fileURL, onResult: onResult)
+                self.beginRecognition(fileURL: fileURL, onSegment: onSegment)
             }
         }
     }
 
-    private func beginRecognition(fileURL: URL, onResult: @escaping (String) -> Void) {
+    private func beginRecognition(fileURL: URL, onSegment: @escaping (SubtitleSegment) -> Void) {
         let asset = AVAsset(url: fileURL)
 
-        let audioTrack = asset.tracks(withMediaType: .audio).first
-        guard audioTrack != nil else {
-            DispatchQueue.main.async { onResult("[No audio track]") }
+        guard let audioTrack = asset.tracks(withMediaType: .audio).first else {
+            DispatchQueue.main.async {
+                onSegment(SubtitleSegment(text: "[No audio track]", startTime: .zero, duration: .zero))
+            }
             return
         }
 
         guard let reader = try? AVAssetReader(asset: asset) else {
-            DispatchQueue.main.async { onResult("[Cannot read asset]") }
+            DispatchQueue.main.async {
+                onSegment(SubtitleSegment(text: "[Cannot read asset]", startTime: .zero, duration: .zero))
+            }
             return
         }
-        self.assetReader = reader
+        assetReader = reader
 
         let outputSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
@@ -44,24 +62,41 @@ final class SpeechRecognizer {
             AVLinearPCMIsBigEndianKey: false,
         ]
 
-        let output = AVAssetReaderTrackOutput(track: audioTrack!, outputSettings: outputSettings)
+        let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
         reader.add(output)
 
         guard reader.startReading() else {
-            DispatchQueue.main.async { onResult("[Cannot start reading]") }
+            DispatchQueue.main.async {
+                onSegment(SubtitleSegment(text: "[Cannot start reading]", startTime: .zero, duration: .zero))
+            }
             return
         }
 
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         recognitionRequest?.shouldReportPartialResults = true
 
-        guard let recognitionRequest else { return }
+        guard let recognitionRequest, let speechRecognizer else { return }
 
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in
-            if let result {
-                DispatchQueue.main.async { onResult(result.bestTranscription.formattedString) }
+        lastEmittedIndex = 0
+
+        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            guard let self, let result else { return }
+
+            let segments = result.bestTranscription.segments
+            // All segments except the last are stable in partial results;
+            // when isFinal, all are stable.
+            let stableCount = result.isFinal ? segments.count : max(0, segments.count - 1)
+
+            while self.lastEmittedIndex < stableCount {
+                let seg = segments[self.lastEmittedIndex]
+                let segment = SubtitleSegment(
+                    text: seg.substring,
+                    startTime: CMTime(seconds: seg.timestamp, preferredTimescale: 1000),
+                    duration: CMTime(seconds: seg.duration, preferredTimescale: 1000)
+                )
+                DispatchQueue.main.async { onSegment(segment) }
+                self.lastEmittedIndex += 1
             }
-            if error != nil || result?.isFinal == true {}
         }
 
         while reader.status == .reading {
@@ -119,5 +154,7 @@ final class SpeechRecognizer {
         recognitionRequest = nil
         assetReader?.cancelReading()
         assetReader = nil
+        speechRecognizer = nil
+        lastEmittedIndex = 0
     }
 }
