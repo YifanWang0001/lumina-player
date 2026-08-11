@@ -1,9 +1,12 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PhotosUI
 
 struct HomeParserView: View {
     @State private var urlText = ""
     @State private var showFilePicker = false
+    @State private var showSourceSheet = false
+    @State private var selectedPhoto: PhotosPickerItem?
     let navigate: (String) -> Void
 
     var body: some View {
@@ -12,20 +15,44 @@ struct HomeParserView: View {
             centerContent
         }
         .background(LuminaColor.background)
+        .confirmationDialog("选择视频来源", isPresented: $showSourceSheet) {
+            Button("从相册选择") { selectedPhoto = nil }
+            Button("从文件选择") { showFilePicker = true }
+            Button("取消", role: .cancel) {}
+        }
         .fileImporter(
             isPresented: $showFilePicker,
             allowedContentTypes: [.movie, .mpeg4Movie, .quickTimeMovie, .audiovisualContent],
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
-                guard url.startAccessingSecurityScopedResource() else { return }
-                defer { url.stopAccessingSecurityScopedResource() }
-                let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-                let dest = caches.appendingPathComponent("lumina_local_\(UUID().uuidString).\(url.pathExtension)")
-                if (try? FileManager.default.copyItem(at: url, to: dest)) != nil {
-                    navigate(dest.absoluteString)
-                }
+                copyToCacheAndNavigate(url)
             }
+        }
+        .onChange(of: selectedPhoto) { _, newItem in
+            guard let item = newItem else { return }
+            Task {
+                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "mp4"
+                let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+                let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).\(ext)")
+                try? data.write(to: dest)
+                navigate(dest.absoluteString)
+            }
+        }
+        .photosPicker(isPresented: Binding(
+            get: { selectedPhoto != nil },
+            set: { if !$0 { selectedPhoto = nil } }
+        ), selection: $selectedPhoto, matching: .videos)
+    }
+
+    private func copyToCacheAndNavigate(_ url: URL) {
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dest = caches.appendingPathComponent("lumina_local_\(UUID().uuidString).\(url.pathExtension)")
+        if (try? FileManager.default.copyItem(at: url, to: dest)) != nil {
+            navigate(dest.absoluteString)
         }
     }
 
@@ -94,7 +121,7 @@ struct HomeParserView: View {
 
                 // Local File Button
                 Button {
-                    showFilePicker = true
+                    showSourceSheet = true
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.doc")

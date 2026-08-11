@@ -85,23 +85,44 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Language option types
+
+enum VideoLanguage: String, CaseIterable {
+    case japanese = "日文"
+    case chinese = "中文"
+    case english = "英文"
+    case korean = "韩文"
+}
+
+enum TranslationLanguage: String, CaseIterable {
+    case chinese = "中文"
+    case english = "英文"
+    case japanese = "日文"
+    case korean = "韩文"
+}
+
+enum DisplayMode: String, CaseIterable {
+    case bilingual = "双语"
+    case translatedOnly = "翻译后语言"
+}
+
 // MARK: - Translation Settings
 
 struct TranslationSettingsContent: View {
-    @State private var videoLanguage = "中文"
-    @State private var translationLanguage = "英文"
-    @State private var displayMode = "双语"
+    @State private var videoLanguage: VideoLanguage = .japanese
+    @State private var translationLanguage: TranslationLanguage = .chinese
+    @State private var displayMode: DisplayMode = .bilingual
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionLabel("视频语音语言")
 
             VStack(spacing: 0) {
-                settingRow("视频语音语言", value: videoLanguage)
+                pickerRow("视频语音语言", selection: $videoLanguage)
                 divider
-                settingRow("翻译语言", value: translationLanguage)
+                pickerRow("翻译语言", selection: $translationLanguage)
                 divider
-                settingRow("翻译显示", value: displayMode)
+                pickerRow("翻译显示", selection: $displayMode)
             }
             .luminaCard()
         }
@@ -111,23 +132,22 @@ struct TranslationSettingsContent: View {
         Rectangle().fill(LuminaColor.border).frame(height: 1)
     }
 
-    private func settingRow(_ title: String, value: String) -> some View {
+    private func pickerRow<T: Hashable & RawRepresentable>(_ title: String, selection: Binding<T>) -> some View where T.RawValue == String {
         HStack {
             Text(title)
                 .font(.system(size: 16))
                 .foregroundColor(LuminaColor.onSurface)
             Spacer()
-            Text(value)
-                .font(.system(size: 16))
-                .foregroundColor(LuminaColor.onSurfaceVariant)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 14))
-                .foregroundColor(LuminaColor.onSurfaceVariant)
-                .padding(.leading, 4)
+            Picker(title, selection: selection) {
+                ForEach(Array(T.allCases), id: \.self) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(LuminaColor.onSurfaceVariant)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .contentShape(Rectangle())
     }
 
     private func sectionLabel(_ text: String) -> some View {
@@ -138,13 +158,26 @@ struct TranslationSettingsContent: View {
     }
 }
 
+// MARK: - Subtitle color options
+
+enum SubtitleColorOption: String, CaseIterable {
+    case white = "白色"
+    case black = "黑色"
+}
+
+enum BackgroundColorOption: String, CaseIterable {
+    case black = "黑色"
+    case white = "白色"
+}
+
 // MARK: - Interface Settings
 
 struct InterfaceSettingsContent: View {
     @State private var subtitleSize: Int = 18
     @State private var backgroundOpacity: Double = 0.5
     @State private var keepScreenOn = true
-    @State private var subtitleColor = LuminaColor.primary
+    @State private var subtitleColor: SubtitleColorOption = .white
+    @State private var backgroundColor: BackgroundColorOption = .black
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -153,11 +186,11 @@ struct InterfaceSettingsContent: View {
                 sectionLabel("字幕设置")
 
                 VStack(spacing: 0) {
-                    colorRow("字幕颜色", color: subtitleColor)
+                    colorPickerRow("字幕颜色", selection: $subtitleColor, color: subtitleColor.displayColor)
                     divider
                     sizeRow
                     divider
-                    colorRow("背景颜色", color: .black)
+                    colorPickerRow("背景颜色", selection: $backgroundColor, color: backgroundColor.displayColor)
                     divider
                     settingRow("字幕位置", value: nil)
                     divider
@@ -209,20 +242,23 @@ struct InterfaceSettingsContent: View {
         .padding(.vertical, 14)
     }
 
-    private func colorRow(_ title: String, color: Color) -> some View {
+    private func colorPickerRow<T: Hashable & RawRepresentable>(_ title: String, selection: Binding<T>, color: Color) -> some View where T.RawValue == String {
         HStack {
             Text(title)
                 .font(.system(size: 14))
                 .foregroundColor(LuminaColor.onSurface)
             Spacer()
+            Picker(title, selection: selection) {
+                ForEach(Array(T.allCases), id: \.self) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(LuminaColor.onSurfaceVariant)
             Circle()
                 .fill(color)
                 .frame(width: 16, height: 16)
                 .overlay(Circle().stroke(LuminaColor.border, lineWidth: 1))
-            Image(systemName: "chevron.right")
-                .font(.system(size: 14))
-                .foregroundColor(LuminaColor.onSurfaceVariant)
-                .padding(.leading, 8)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -287,6 +323,13 @@ struct InterfaceSettingsContent: View {
                         .offset(x: geo.size.width * backgroundOpacity - 7)
                 }
                 .frame(height: 14)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let ratio = min(max(value.location.x / geo.size.width, 0), 1)
+                            backgroundOpacity = Double(ratio)
+                        }
+                )
             }
             .frame(height: 14)
         }
@@ -306,6 +349,26 @@ struct InterfaceSettingsContent: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+}
+
+// MARK: - Color helpers
+
+extension SubtitleColorOption {
+    var displayColor: Color {
+        switch self {
+        case .white: .white
+        case .black: .black
+        }
+    }
+}
+
+extension BackgroundColorOption {
+    var displayColor: Color {
+        switch self {
+        case .black: .black
+        case .white: .white
+        }
     }
 }
 
