@@ -16,11 +16,7 @@ final class TranslationService {
 
         lastTask = Task {
             do {
-                let session = TranslationSession(
-                    sourceLanguage: .japanese,
-                    targetLanguage: .chinese
-                )
-
+                let session = TranslationSession()
                 let response = try await session.translate(trimmed)
 
                 guard !Task.isCancelled else { return }
