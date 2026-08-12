@@ -18,77 +18,30 @@ final class SpeechRecognizer {
 
         let locale = Locale(identifier: localeIdentifier)
         speechRecognizer = SFSpeechRecognizer(locale: locale)
-        DebugLogger.shared.log("SpeechRecognizer: locale=\(localeIdentifier) supported=\(SFSpeechRecognizer(locale: locale) != nil)")
 
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             guard let self else { return }
             guard status == .authorized else {
-                DebugLogger.shared.log("SpeechRecognizer: not authorized (\(status.rawValue))")
                 DispatchQueue.main.async {
                     onSegment(SubtitleSegment(text: "[Speech recognition not authorized]", startTime: .zero, duration: .zero))
                 }
                 return
             }
-            DebugLogger.shared.log("SpeechRecognizer: authorized, starting recognition")
-            Task { await self.beginRecognition(fileURL: fileURL, onSegment: onSegment) }
+            self.beginRecognition(fileURL: fileURL, onSegment: onSegment)
         }
     }
 
-    private func beginRecognition(fileURL: URL, onSegment: @escaping (SubtitleSegment) -> Void) async {
-        let asset = AVAsset(url: fileURL)
-
-        guard let audioTrack = try? await asset.loadTracks(withMediaType: .audio).first else {
-            DebugLogger.shared.log("SpeechRecognizer: no audio track")
-            DispatchQueue.main.async {
-                onSegment(SubtitleSegment(text: "[No audio track]", startTime: .zero, duration: .zero))
-            }
-            return
-        }
-
-        DebugLogger.shared.log("SpeechRecognizer: audio track found, extracting...")
-
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("lumina_audio_\(UUID().uuidString).caf")
-
-        let outputSettings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: 16000,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false,
-        ]
-
-        do {
-            try await extractAudio(track: audioTrack, asset: asset, to: tempURL, settings: outputSettings)
-        } catch {
-            DebugLogger.shared.log("SpeechRecognizer: extraction failed: \(error.localizedDescription)")
-            DispatchQueue.main.async {
-                onSegment(SubtitleSegment(text: "[Audio extraction failed]", startTime: .zero, duration: .zero))
-            }
-            return
-        }
-
-        DebugLogger.shared.log("SpeechRecognizer: audio extracted, starting URL recognition")
-
+    private func beginRecognition(fileURL: URL, onSegment: @escaping (SubtitleSegment) -> Void) {
         recognitionTask?.cancel()
         lastEmittedIndex = 0
 
-        let request = SFSpeechURLRecognitionRequest(url: tempURL)
+        guard let speechRecognizer else { return }
+
+        let request = SFSpeechURLRecognitionRequest(url: fileURL)
         request.shouldReportPartialResults = true
 
-        guard let speechRecognizer else {
-            DebugLogger.shared.log("SpeechRecognizer: recognizer nil after extraction")
-            return
-        }
-
         recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self, let result else {
-                if let error {
-                    DebugLogger.shared.log("SpeechRecognizer: recognition error: \(error.localizedDescription)")
-                }
-                return
-            }
+            guard let self, let result else { return }
 
             let segments = result.bestTranscription.segments
             let stableCount = result.isFinal ? segments.count : max(0, segments.count - 1)
@@ -103,64 +56,7 @@ final class SpeechRecognizer {
                 DispatchQueue.main.async { onSegment(segment) }
                 self.lastEmittedIndex += 1
             }
-
-            if result.isFinal {
-                DebugLogger.shared.log("SpeechRecognizer: final — \(segments.count) segments")
-                try? FileManager.default.removeItem(at: tempURL)
-            }
         }
-    }
-
-    private func extractAudio(track: AVAssetTrack, asset: AVAsset, to url: URL, settings: [String: Any]) async throws {
-        guard let reader = try? AVAssetReader(asset: asset) else {
-            throw NSError(domain: "SpeechRecognizer", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot create asset reader"])
-        }
-
-        let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
-        reader.add(readerOutput)
-
-        guard let writer = try? AVAssetWriter(url: url, fileType: .caf) else {
-            throw NSError(domain: "SpeechRecognizer", code: 2, userInfo: [NSLocalizedDescriptionKey: "Cannot create asset writer"])
-        }
-
-        let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
-        writer.add(writerInput)
-
-        guard reader.startReading() else {
-            throw NSError(domain: "SpeechRecognizer", code: 3, userInfo: [NSLocalizedDescriptionKey: "Cannot start reading"])
-        }
-
-        writer.startWriting()
-        writer.startSession(atSourceTime: .zero)
-
-        let startTime = Date()
-        while reader.status == .reading || reader.status == .unknown {
-            if Date().timeIntervalSince(startTime) > 30 { break }
-
-            if let sampleBuffer = readerOutput.copyNextSampleBuffer() {
-                if writerInput.isReadyForMoreMediaData {
-                    writerInput.append(sampleBuffer)
-                }
-            } else {
-                if reader.status == .completed { break }
-                try? await Task.sleep(nanoseconds: 50_000_000)
-            }
-        }
-
-        writerInput.markAsFinished()
-
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            writer.finishWriting { continuation.resume() }
-        }
-
-        if writer.status != .completed {
-            let errorDesc = writer.error?.localizedDescription ?? "unknown error"
-            throw NSError(domain: "SpeechRecognizer", code: 4, userInfo: [NSLocalizedDescriptionKey: "Audio export failed: \(errorDesc)"])
-        }
-    }
-
-    deinit {
-        recognitionTask?.cancel()
     }
 
     func stop() {

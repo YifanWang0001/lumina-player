@@ -1,7 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
-import Photos
 
 struct HomeParserView: View {
     @State private var urlText = ""
@@ -11,7 +10,6 @@ struct HomeParserView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showURLError = false
     @State private var urlErrorMessage = ""
-    @State private var isProcessingPhoto = false
     let navigate: (String) -> Void
 
     var body: some View {
@@ -20,22 +18,6 @@ struct HomeParserView: View {
             centerContent
         }
         .background(LuminaColor.background)
-        .overlay {
-            if isProcessingPhoto {
-                ZStack {
-                    Color.black.opacity(0.4).ignoresSafeArea()
-                    VStack(spacing: 16) {
-                        ProgressView()
-                            .tint(.white)
-                        Text("正在加载视频...")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white)
-                    }
-                    .padding(24)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.8)))
-                }
-            }
-        }
         .confirmationDialog("选择视频来源", isPresented: $showSourceSheet) {
             Button("从相册选择") { showPhotosPicker = true }
             Button("从文件选择") { showFilePicker = true }
@@ -47,15 +29,19 @@ struct HomeParserView: View {
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
-                DebugLogger.shared.log("File importer: \(url.lastPathComponent)")
                 copyToCacheAndNavigate(url)
             }
         }
         .onChange(of: selectedPhoto) {
             guard let item = selectedPhoto else { return }
-            isProcessingPhoto = true
-            DebugLogger.shared.log("Photo selected, loading via PHAsset...")
-            Task { await loadPhotoAsset(item) }
+            Task {
+                defer { selectedPhoto = nil }
+                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+                let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+                let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).mp4")
+                try? data.write(to: dest)
+                navigate(dest.absoluteString)
+            }
         }
         .photosPicker(isPresented: $showPhotosPicker, selection: $selectedPhoto, matching: .videos)
         .alert("链接错误", isPresented: $showURLError) {
@@ -65,86 +51,13 @@ struct HomeParserView: View {
         }
     }
 
-    // MARK: - Photo Library Loading (file-based, avoids memory crash)
-
-    private func loadPhotoAsset(_ item: PhotosPickerItem) async {
-        defer {
-            if isProcessingPhoto {
-                selectedPhoto = nil
-                isProcessingPhoto = false
-            }
-        }
-
-        // Try PHAsset approach first — gets file URL without loading into memory
-        if let identifier = item.itemIdentifier {
-            let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
-            if let asset = fetch.firstObject {
-                DebugLogger.shared.log("PHAsset found, requesting AVAsset...")
-                let url = await requestVideoURL(from: asset)
-                if let url {
-                    DebugLogger.shared.log("Got video URL: \(url.lastPathComponent)")
-                    selectedPhoto = nil
-                    isProcessingPhoto = false
-                    copyToCacheAndNavigate(url)
-                    return
-                }
-                DebugLogger.shared.log("PHAsset did not return URL, falling back to Data.self")
-            }
-        }
-
-        // Fallback: load as Data (uses more memory, but works as last resort)
-        DebugLogger.shared.log("Falling back to loadTransferable Data.self")
-        guard let data = try? await item.loadTransferable(type: Data.self) else {
-            DebugLogger.shared.log("ERROR: loadTransferable returned nil")
-            return
-        }
-        DebugLogger.shared.log("Loaded \(data.count) bytes")
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).mp4")
-        do {
-            try data.write(to: dest)
-            DebugLogger.shared.log("Written to \(dest.lastPathComponent)")
-            selectedPhoto = nil
-            isProcessingPhoto = false
-            navigate(dest.absoluteString)
-        } catch {
-            DebugLogger.shared.log("ERROR writing file: \(error.localizedDescription)")
-        }
-    }
-
-    private func requestVideoURL(from asset: PHAsset) async -> URL? {
-        await withCheckedContinuation { continuation in
-            let options = PHVideoRequestOptions()
-            options.deliveryMode = .highQualityFormat
-            options.isNetworkAccessAllowed = false
-
-            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
-                if let urlAsset = avAsset as? AVURLAsset {
-                    continuation.resume(returning: urlAsset.url)
-                } else {
-                    continuation.resume(returning: nil)
-                }
-            }
-        }
-    }
-
-    // MARK: - File Copy
-
     private func copyToCacheAndNavigate(_ url: URL) {
-        DebugLogger.shared.log("Copying to cache: \(url.lastPathComponent)")
-        guard url.startAccessingSecurityScopedResource() else {
-            DebugLogger.shared.log("ERROR: startAccessingSecurityScopedResource failed")
-            return
-        }
+        guard url.startAccessingSecurityScopedResource() else { return }
         defer { url.stopAccessingSecurityScopedResource() }
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         let dest = caches.appendingPathComponent("lumina_local_\(UUID().uuidString).\(url.pathExtension)")
-        do {
-            try FileManager.default.copyItem(at: url, to: dest)
-            DebugLogger.shared.log("Copied OK: \(dest.lastPathComponent)")
+        if (try? FileManager.default.copyItem(at: url, to: dest)) != nil {
             navigate(dest.absoluteString)
-        } catch {
-            DebugLogger.shared.log("ERROR copy: \(error.localizedDescription)")
         }
     }
 
@@ -208,7 +121,6 @@ struct HomeParserView: View {
                         showURLError = true
                         return
                     }
-                    DebugLogger.shared.log("Navigate to URL: \(trimmed)")
                     navigate(trimmed)
                 } label: {
                     Text("解析")
