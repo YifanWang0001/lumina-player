@@ -17,9 +17,9 @@ final class DebugLogger: ObservableObject {
         let ts = formatter.string(from: Date())
         let line = "[\(ts)] \(msg)"
         Task { @MainActor in
-            shared.lines.append(line)
-            if shared.lines.count > shared.maxLines {
-                shared.lines.removeFirst(shared.lines.count - shared.maxLines)
+            DebugLogger.shared.lines.append(line)
+            if DebugLogger.shared.lines.count > DebugLogger.shared.maxLines {
+                DebugLogger.shared.lines.removeFirst(DebugLogger.shared.lines.count - DebugLogger.shared.maxLines)
             }
         }
     }
