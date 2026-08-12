@@ -123,7 +123,6 @@ final class SpeechRecognizer {
                 if writerInput.isReadyForMoreMediaData {
                     writerInput.append(sampleBuffer)
                 }
-                CMSampleBufferInvalidate(sampleBuffer)
             } else {
                 if reader.status == .completed { break }
                 try? await Task.sleep(nanoseconds: 50_000_000)
