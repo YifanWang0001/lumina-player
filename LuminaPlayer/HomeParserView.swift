@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
+import Photos
 
 struct HomeParserView: View {
     @State private var urlText = ""
@@ -10,6 +11,7 @@ struct HomeParserView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showURLError = false
     @State private var urlErrorMessage = ""
+    @State private var isProcessingPhoto = false
     let navigate: (String) -> Void
 
     var body: some View {
@@ -18,6 +20,22 @@ struct HomeParserView: View {
             centerContent
         }
         .background(LuminaColor.background)
+        .overlay {
+            if isProcessingPhoto {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .tint(.white)
+                        Text("正在加载视频...")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                    }
+                    .padding(24)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.8)))
+                }
+            }
+        }
         .confirmationDialog("选择视频来源", isPresented: $showSourceSheet) {
             Button("从相册选择") { showPhotosPicker = true }
             Button("从文件选择") { showFilePicker = true }
@@ -34,14 +52,8 @@ struct HomeParserView: View {
         }
         .onChange(of: selectedPhoto) {
             guard let item = selectedPhoto else { return }
-            Task {
-                defer { selectedPhoto = nil }
-                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
-                let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-                let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).mp4")
-                try? data.write(to: dest)
-                navigate(dest.absoluteString)
-            }
+            isProcessingPhoto = true
+            Task { await loadPhotoAsset(item) }
         }
         .photosPicker(isPresented: $showPhotosPicker, selection: $selectedPhoto, matching: .videos)
         .alert("链接错误", isPresented: $showURLError) {
@@ -58,6 +70,55 @@ struct HomeParserView: View {
         let dest = caches.appendingPathComponent("lumina_local_\(UUID().uuidString).\(url.pathExtension)")
         if (try? FileManager.default.copyItem(at: url, to: dest)) != nil {
             navigate(dest.absoluteString)
+        }
+    }
+
+    // MARK: - Photo Library (file-based, avoids loading into memory)
+
+    private func loadPhotoAsset(_ item: PhotosPickerItem) async {
+        defer {
+            selectedPhoto = nil
+            isProcessingPhoto = false
+        }
+
+        // 1) Try PHAsset — gets file URL directly, no memory overhead
+        if let identifier = item.itemIdentifier {
+            let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
+            if let asset = fetch.firstObject {
+                if let url = await requestVideoURL(from: asset) {
+                    guard url.startAccessingSecurityScopedResource() else { return }
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+                    let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).mp4")
+                    if (try? FileManager.default.copyItem(at: url, to: dest)) != nil {
+                        navigate(dest.absoluteString)
+                        return
+                    }
+                }
+            }
+        }
+
+        // 2) Fallback: Data.self for videos that aren't accessible via file URL
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dest = caches.appendingPathComponent("lumina_photo_\(UUID().uuidString).mp4")
+        try? data.write(to: dest)
+        navigate(dest.absoluteString)
+    }
+
+    private func requestVideoURL(from asset: PHAsset) async -> URL? {
+        await withCheckedContinuation { continuation in
+            let options = PHVideoRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = false
+
+            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
+                if let urlAsset = avAsset as? AVURLAsset {
+                    continuation.resume(returning: urlAsset.url)
+                } else {
+                    continuation.resume(returning: nil)
+                }
+            }
         }
     }
 
