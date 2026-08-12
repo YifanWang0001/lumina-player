@@ -13,11 +13,14 @@ final class DebugLogger: ObservableObject {
         return f
     }()
 
-    func log(_ msg: String) {
+    nonisolated func log(_ msg: String) {
         let ts = formatter.string(from: Date())
-        lines.append("[\(ts)] \(msg)")
-        if lines.count > maxLines {
-            lines.removeFirst(lines.count - maxLines)
+        let line = "[\(ts)] \(msg)"
+        Task { @MainActor in
+            shared.lines.append(line)
+            if shared.lines.count > shared.maxLines {
+                shared.lines.removeFirst(shared.lines.count - shared.maxLines)
+            }
         }
     }
 }
