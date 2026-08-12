@@ -18,15 +18,18 @@ final class SpeechRecognizer {
 
         let locale = Locale(identifier: localeIdentifier)
         speechRecognizer = SFSpeechRecognizer(locale: locale)
+        DebugLogger.shared.log("SpeechRecognizer: locale=\(localeIdentifier) supported=\(SFSpeechRecognizer(locale: locale) != nil)")
 
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             guard let self else { return }
             guard status == .authorized else {
+                DebugLogger.shared.log("SpeechRecognizer: not authorized (\(status.rawValue))")
                 DispatchQueue.main.async {
                     onSegment(SubtitleSegment(text: "[Speech recognition not authorized]", startTime: .zero, duration: .zero))
                 }
                 return
             }
+            DebugLogger.shared.log("SpeechRecognizer: authorized, starting recognition")
             Task { await self.beginRecognition(fileURL: fileURL, onSegment: onSegment) }
         }
     }
@@ -35,11 +38,14 @@ final class SpeechRecognizer {
         let asset = AVAsset(url: fileURL)
 
         guard let audioTrack = try? await asset.loadTracks(withMediaType: .audio).first else {
+            DebugLogger.shared.log("SpeechRecognizer: no audio track")
             DispatchQueue.main.async {
                 onSegment(SubtitleSegment(text: "[No audio track]", startTime: .zero, duration: .zero))
             }
             return
         }
+
+        DebugLogger.shared.log("SpeechRecognizer: audio track found, extracting...")
 
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("lumina_audio_\(UUID().uuidString).caf")
@@ -56,11 +62,14 @@ final class SpeechRecognizer {
         do {
             try await extractAudio(track: audioTrack, asset: asset, to: tempURL, settings: outputSettings)
         } catch {
+            DebugLogger.shared.log("SpeechRecognizer: extraction failed: \(error.localizedDescription)")
             DispatchQueue.main.async {
                 onSegment(SubtitleSegment(text: "[Audio extraction failed]", startTime: .zero, duration: .zero))
             }
             return
         }
+
+        DebugLogger.shared.log("SpeechRecognizer: audio extracted, starting URL recognition")
 
         recognitionTask?.cancel()
         lastEmittedIndex = 0
@@ -68,10 +77,18 @@ final class SpeechRecognizer {
         let request = SFSpeechURLRecognitionRequest(url: tempURL)
         request.shouldReportPartialResults = true
 
-        guard let speechRecognizer else { return }
+        guard let speechRecognizer else {
+            DebugLogger.shared.log("SpeechRecognizer: recognizer nil after extraction")
+            return
+        }
 
         recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self, let result else { return }
+            guard let self, let result else {
+                if let error {
+                    DebugLogger.shared.log("SpeechRecognizer: recognition error: \(error.localizedDescription)")
+                }
+                return
+            }
 
             let segments = result.bestTranscription.segments
             let stableCount = result.isFinal ? segments.count : max(0, segments.count - 1)
@@ -88,6 +105,7 @@ final class SpeechRecognizer {
             }
 
             if result.isFinal {
+                DebugLogger.shared.log("SpeechRecognizer: final — \(segments.count) segments")
                 try? FileManager.default.removeItem(at: tempURL)
             }
         }

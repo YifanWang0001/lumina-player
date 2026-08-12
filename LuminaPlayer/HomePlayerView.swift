@@ -15,8 +15,15 @@ struct HomePlayerView: View {
             scrollContent
         }
         .background(LuminaColor.background)
-        .onAppear { viewModel.loadURL(url) }
-        .onDisappear { viewModel.stop() }
+        .overlay(alignment: .bottom) { DebugOverlay() }
+        .onAppear {
+            DebugLogger.shared.log("HomePlayerView appeared")
+            viewModel.loadURL(url)
+        }
+        .onDisappear {
+            DebugLogger.shared.log("HomePlayerView disappeared")
+            viewModel.stop()
+        }
     }
 
     // MARK: - Top Bar

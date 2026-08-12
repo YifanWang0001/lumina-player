@@ -44,16 +44,20 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Load
 
     func loadURL(_ urlString: String) {
+        DebugLogger.shared.log("loadURL: \(urlString.prefix(80))")
         guard let url = URL(string: urlString) else {
             downloadError = "无效链接"
+            DebugLogger.shared.log("ERROR: invalid URL")
             return
         }
 
         if url.isFileURL {
+            DebugLogger.shared.log("Local file, starting playback directly")
             startPlayback(localURL: url)
             return
         }
 
+        DebugLogger.shared.log("Starting download...")
         isDownloading = true
         downloadProgress = 0
         downloadError = nil
@@ -81,6 +85,7 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Playback
 
     private func startPlayback(localURL: URL) {
+        DebugLogger.shared.log("startPlayback: \(localURL.lastPathComponent)")
         isDownloading = false
         segments = []
         translatedSegments = [:]
@@ -94,17 +99,22 @@ final class PlayerViewModel: ObservableObject {
 
         // Restore saved playback position
         let seekTime = savedTime(for: localURL)
+        if let st = seekTime, st > .zero {
+            DebugLogger.shared.log("Resume from \(CMTimeGetSeconds(st))s")
+        }
 
         avPlayer.currentItem?.publisher(for: \.status)
             .sink { [weak self] status in
                 guard let self else { return }
                 switch status {
                 case .readyToPlay:
+                    DebugLogger.shared.log("Player readyToPlay")
                     if let st = seekTime, st > .zero {
                         avPlayer.seek(to: st)
                     }
                     self.startRecognition(localURL: localURL)
                 case .failed:
+                    DebugLogger.shared.log("Player failed: \(avPlayer.currentItem?.error?.localizedDescription ?? "")")
                     let baseError = avPlayer.currentItem?.error?.localizedDescription ?? ""
                     if baseError.isEmpty {
                         self.playerError = "无法播放\n\n链接可能不是直接的视频地址，请确认链接以 .mp4 / .m3u8 等格式结尾"
@@ -160,6 +170,8 @@ final class PlayerViewModel: ObservableObject {
         guard !recognitionStarted else { return }
         recognitionStarted = true
 
+        DebugLogger.shared.log("startRecognition: lang=\(videoLanguage.localeIdentifier)")
+
         currentOriginalText = "[正在识别语音...]"
         currentTranslatedText = nil
 
@@ -176,6 +188,12 @@ final class PlayerViewModel: ObservableObject {
 
             let index = self.segments.count
             self.segments.append(segment)
+
+            if !isStatus {
+                DebugLogger.shared.log("Segment[\(index)]: \"\(segment.text.prefix(40))\"")
+            } else {
+                DebugLogger.shared.log("Status: \(segment.text)")
+            }
 
             if isStatus {
                 self.currentOriginalText = segment.text
@@ -226,6 +244,7 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Stop
 
     func stop() {
+        DebugLogger.shared.log("stop() — saving position, cleaning up")
         saveCurrentTime()
         if let observer = timeObserver {
             player?.removeTimeObserver(observer)
